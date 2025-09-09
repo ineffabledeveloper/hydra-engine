@@ -28,24 +28,33 @@ jobs:
           nohup rclone mount my_drive: /home/persistent_storage --allow-other --vfs-cache-mode writes &
           sleep 5
 
-      - name: 2. Start RDP and Tunnel
+      - name: 2. Start RDP and Show Connection Details
         run: |
           # Start the XRDP service that is already inside the container
           /usr/sbin/xrdp-sesman
           /usr/sbin/xrdp -n
           
           # Install and start ngrok tunnel
-          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | tee /etc/apt/sources.list.d/ngrok.list
           apt-get update && apt-get install -y ngrok
           ngrok authtoken ${{ secrets.NGROK_AUTHTOKEN }}
           nohup ngrok tcp 3389 &
           sleep 5
           
-          # Get the URL and send it via Telegram
+          # Get the URL from the ngrok API
           RDP_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r .tunnels[0].public_url)
-          MESSAGE="✅ Kali Hydra Head Online!%0A%0AConnect to:%0A\`${RDP_URL}\`%0A%0AUser: \`root\`%0APassword: the-one-in-dockerfile"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" -d "text=${MESSAGE}" -d "parse_mode=Markdown"
+          
+          # --- SIMPLE METHOD: PRINT DETAILS CLEARLY IN THE LOG ---
+          echo "********************************************************************"
+          echo "********************************************************************"
+          echo ""
+          echo "      ✅ Your Kali RDP Connection is Ready!"
+          echo ""
+          echo "      RDP Address: ${RDP_URL}"
+          echo "      Username:    root"
+          echo "      Password:    the one you set in your Dockerfile"
+          echo ""
+          echo "********************************************************************"
+          echo "********************************************************************"
 
       - name: 3. The Hydra Chain Trigger
         env:
@@ -56,7 +65,10 @@ jobs:
           
           echo "Spawning new Hydra head..."
           # Use GitHub API to trigger this same workflow again, creating the chain
-          curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${{ github.repository }}/actions/workflows/hydra-chain.yml/dispatches" -d '{"ref":"main"}'
-          
-          MESSAGE="⚠️ Hydra Head is dying. Spawning a new one. Expect a new link in ~2-3 minutes."
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" -d "text=${MESSAGE}"
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/hydra-chain.yml/dispatches" \
+            -d '{"ref":"main"}'
